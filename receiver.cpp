@@ -32,6 +32,9 @@ Byte sent_xonxoff = XON;
 Boolean send_xon = false, send_xoff = false;
 
 struct sockaddr_in serv_addr, cli_addr;
+int cli_len = sizeof cli_addr;
+
+char sig[2];
 
 /* Socket */
 int sockfd; // listen on sock_fd
@@ -58,13 +61,13 @@ int main(int argc, char *argv[]) {
 
 	memset((char *) &serv_addr, 0, sizeof serv_addr);
 	serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY; //assign server address
-	serv_addr.sin_port = atoi(argv[1]); //assign port number
+    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY); //assign server address
+	serv_addr.sin_port = htons(atoi(argv[1])); //assign port number
 	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
 		printf("BIND ERROR\n");
 		exit(1);
  	}
-	printf("Binding pada port %d ...\n", serv_addr.sin_port);
+	printf("Binding pada port %d ...\n", atoi(argv[1]));
 
 	/* Initialize XON/XOFF flags */
 	sent_xonxoff = XON;
@@ -88,13 +91,18 @@ int main(int argc, char *argv[]) {
 		while (true) {
 			/* Call q_get */
 			Byte* data;
-			if (*q_get(rxq, data) == Endfile) {
-				exit(0);
+			Byte* ret = q_get(rxq, data);
+			if (ret) {
+				if (*data == Endfile) {
+					printf("ENDFILE\n");
+					exit(0);
+				}
+				printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, data);
+				consumeCount++;
 			}
 
-			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, data);
 			/* Can introduce some delay here. */
-			sleep(DELAY);
+			// sleep(DELAY);
 		}
 	}
 }
@@ -113,28 +121,30 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	Return a pointer to the buffer where data is put.
 	*/
 
-	Byte *newCharacter;
-	if (recv(sockfd, newCharacter, 1, 0)) {
-		printf("Failed to read from socket\n");
-	}
-
-	queue->data[queue->rear] = newCharacter[0];
-	queue->rear = ((queue->rear) + 1) % RXQSIZE;
-	(queue->count)++;
-
 	if (queue->count >= UPPER_LIMIT && !send_xoff) {
 		printf("Buffer > minimum upperlimit\n");
 		send_xon = false;
 		send_xoff = true;
 		sent_xonxoff = XOFF;
 
-		if (send(sockfd, &sent_xonxoff, 1, 0) > 0) {
+		sig[0] = sent_xonxoff;
+		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim XOFF.\n");
 		} else {
 			printf("Gagal mengirim XOFF.\n");
 		}
 	}
-	return newCharacter;
+
+	Byte temp[1];
+	if (recvfrom(sockfd, temp, 1, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len) < 0) {
+		printf("Failed to read from socket\n");
+	}
+
+	queue->data[queue->rear] = temp[0];
+	queue->rear = ((queue->rear) + 1) % RXQSIZE;
+	(queue->count)++;
+
+	return queue->data;
 }
 
 /* q_get returns a pointer to the buffer where data is read or NULL if
@@ -146,7 +156,7 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 
 	/* Nothing in the queue */
 	if (!queue->count) return (NULL);
-
+	printf("wewew\n");
 	/*
 	Insert code here.
 
@@ -169,7 +179,8 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 		send_xoff = false;
 		sent_xonxoff = XON;
 
-		if (send(sockfd, &sent_xonxoff, 1, 0) > 0) {
+		sig[0] = sent_xonxoff;
+		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim XON.\n");
 		} else {
 			printf("Gagal mengirim XON.\n");

@@ -5,7 +5,6 @@
 #include <netinet/in.h>
 #include <string.h>
 #include <unistd.h>
-#include <pthread.h>
 #include <iostream>
 #include <netdb.h>
 #include <stdbool.h>
@@ -15,7 +14,7 @@
 #define LISTENQ 8 /*maximum number of client connections */
 
 
-static void *sendSignal(void*);
+// static void *sendSignal(void*);
 FILE *fp;
 char lastSignalRecv = XON;
 char buf[MAXLEN];
@@ -44,6 +43,7 @@ int main (int argc, char **argv)
    exit(1);
  }
 
+        // serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
 
  bzero((char *) &servaddr, sizeof(servaddr));
  servaddr.sin_family = AF_INET;
@@ -80,10 +80,10 @@ int main (int argc, char **argv)
 
  pthread_t signal_thread;
 
- if (pthread_create(&signal_thread,NULL,&sendSignal,NULL)) {
-    printf("ERROR CREATING THREAD\n");
-    exit(1);
- }
+ // if (pthread_create(&signal_thread,NULL,&sendSignal,NULL)) {
+ //    printf("ERROR CREATING THREAD\n");
+ //    exit(1);
+ // }
 
 
  fp = fopen(argv[3],"r");
@@ -94,52 +94,53 @@ int main (int argc, char **argv)
  }
 
  int counter = 1;
- while(fscanf(fp,"%c",buf) != EOF) {
-   bool allow = false;
-   while(lastSignalRecv == XOFF) {
+
+ if (fork()) {
+  while(fscanf(fp,"%c",buf) != EOF) {
+    bool allow = false;
+    while(lastSignalRecv == XOFF) {
     if (!allow) {
       printf("Waiting XON\n");
       allow = true;
     }
    }
- printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
- sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
- bzero(buf,MAXLEN);
- counter++;
- }
-
- printf("Exiting parent\n");
-
- //close listening socket
- close (sockfd);
-
- return 0;
-}
-
-static void *sendSignal(void* param) {
-  while(true) {
-    int serv_len = sizeof(servaddr);
-    char _buf[MAXLEN];
-
-    n = recvfrom(sockfd,_buf,strlen(_buf),0,(struct sockaddr*)&servaddr,(socklen_t*) &serv_len);
-    // buffer[n]=0;
-    // fputs(_buffer,stdout);
-
-    if (n < 0) {
-       perror("ERROR reading from socket");
-       exit(1);
-    }
-
-    lastSignalRecv = _buf[0];
-    if (lastSignalRecv == XOFF) {
-        printf("XOFF accepted\n");
-    } else if (lastSignalRecv == XON) {
-        printf("XON accepted\n");
-    }
-
+   printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
+   sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
+   bzero(buf,MAXLEN);
+   counter++;
   }
-  printf("Exiting child...\n");
-  pthread_exit(0);  
+  printf("Exiting parent\n");
+  //close listening socket
+  close (sockfd);
+  } else {
+    while(true) {
+      int serv_len = sizeof(servaddr);
+      char _buf[MAXLEN];
+
+      n = recvfrom(sockfd,_buf,strlen(_buf),0,(struct sockaddr*)&servaddr,(socklen_t*) &serv_len);
+      // buffer[n]=0;
+      // fputs(_buffer,stdout);
+
+      if (n < 0) {
+         perror("ERROR reading from socket");
+         exit(1);
+      }
+
+      lastSignalRecv = _buf[0];
+      if (lastSignalRecv == XOFF) {
+          printf("XOFF accepted\n");
+      } else if (lastSignalRecv == XON) {
+          printf("XON accepted\n");
+      }
+
+    }
+    printf("Exiting child...\n");
+    pthread_exit(0);  
+  }
 }
+
+// static void *sendSignal(void* param) {
+
+// }
 
 

@@ -9,17 +9,15 @@
 #include <netdb.h>
 #include <stdbool.h>
 
-#define MAXLINE 4096 /*max text line length*/
-// #define SERV_PORT 4949 /*port*/
+#include "dcomm.h"
+
 #define LISTENQ 8 /*maximum number of client connections */
 
-#define XON (0x11)
-#define XOFF (0x13)
 
 static void *sendSignal(void*);
 FILE *fp;
 char lastSignalRecv = XON;
-char buf[MAXLINE];
+char buf[MAXLEN];
 
 int sockfd,portno,pid,n;
 socklen_t client;
@@ -103,7 +101,7 @@ int main (int argc, char **argv)
    }
  printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
  sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
- bzero(buf,MAXLINE);
+ bzero(buf,MAXLEN);
  counter++;
  }
 
@@ -118,7 +116,7 @@ int main (int argc, char **argv)
 static void *sendSignal(void* param) {
   while(true) {
     int serv_len = sizeof(servaddr);
-    char _buf[MAXLINE];
+    char _buf[MAXLEN];
 
     n = recvfrom(sockfd,_buf,strlen(_buf),0,(struct sockaddr*)&servaddr,(socklen_t*) &serv_len);
     // buffer[n]=0;

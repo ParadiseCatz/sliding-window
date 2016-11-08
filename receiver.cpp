@@ -44,11 +44,19 @@ static Byte *q_get(QTYPE *, Byte *);
 int main(int argc, char *argv[]) {
 	Byte c;
 
-	printf("%s %s\n",argv[0], argv[1]);
+	// printf("%s %s\n",argv[0], argv[1]);
+
+	if (argc < 2) {
+		printf("Argument kurang\n");
+		return 1;
+	}
+
 	/*
 	Insert code here to bind socket to the port number given in argv[1].
 	*/
 	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+	memset((char *) &serv_addr, 0, sizeof serv_addr);
 	serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY; //assign server address
 	serv_addr.sin_port = atoi(argv[1]); //assign port number
@@ -56,27 +64,35 @@ int main(int argc, char *argv[]) {
 		printf("BIND ERROR\n");
 		exit(1);
  	}
-	printf("Binding pada %d:%d ...\n", &serv_addr ,serv_addr.sin_port);
+	printf("Binding pada port %d ...\n", serv_addr.sin_port);
 
 	/* Initialize XON/XOFF flags */
 	sent_xonxoff = XON;
 
+	int byteCount = 0, consumeCount = 0;
 	/* Create child process */
 	if (fork()) { 	/*** IF PARENT PROCESS ***/
+		// printf("Adsdfas\n");
 		while (true) {
 			c = *(rcvchar(sockfd, rxq));
 
+			byteCount++;
+			printf("Menerima byte ke-%d.\n", byteCount);
 			/* Quit on end of file */
 			if (c == Endfile) {
 				exit(0);
 			}
 		}
 	} else { 		/*** IF CHILD PROCESS ***/
+		// printf("LOL\n");
 		while (true) {
 			/* Call q_get */
 			Byte* data;
-			q_get(rxq, data);
+			if (*q_get(rxq, data) == Endfile) {
+				exit(0);
+			}
 
+			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, data);
 			/* Can introduce some delay here. */
 			sleep(DELAY);
 		}

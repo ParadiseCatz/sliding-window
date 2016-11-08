@@ -81,8 +81,10 @@ int main(int argc, char *argv[]) {
 
 			byteCount++;
 			printf("Menerima byte ke-%d.\n", byteCount);
+			printf
 			/* Quit on end of file */
 			if (c == Endfile) {
+				printf("Exit Parent\n");
 				exit(0);
 			}
 		}

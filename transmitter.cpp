@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <iostream>
 #include <netdb.h>
 #include <stdbool.h>
 
@@ -43,6 +44,10 @@ int main (int argc, char **argv)
    exit(1);
  }
 
+
+ bzero((char *) &servaddr, sizeof(servaddr));
+ servaddr.sin_family = AF_INET;
+ 
  server = gethostbyname(argv[1]);
 
  if (server == NULL) {
@@ -50,28 +55,26 @@ int main (int argc, char **argv)
   exit(0);
  }
 
- bzero((char*) &servaddr,sizeof(servaddr));
  //preparation of the socket address
- servaddr.sin_family = AF_INET;
  bcopy((char*)server->h_addr, (char*)&servaddr.sin_addr.s_addr, server->h_length);
  servaddr.sin_port = htons(portno);
 
- if (connect (sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
- {
-   printf("CONNECT ERROR\n");
-   exit(1);
- }
+ // if (connect (sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
+ // {
+ //   printf("CONNECT ERROR\n");
+ //   exit(1);
+ // }
 
- puts("Socket Connected\n");
+ // puts("Socket Connected\n");
 
  
  /* Send message to the server */
- n = write(sockfd, buf, strlen(buf));
+ // n = write(sockfd, buf, strlen(buf));
  
- if (n < 0) {
-      perror("ERROR writing to socket");
-      exit(1);
- }
+ // if (n < 0) {
+ //      perror("ERROR writing to socket");
+ //      exit(1);
+ // }
 
  printf("Parent Thread PID : %d\n",getpid());
 

@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <netinet/in.h>
 #include <string.h>
 #include <unistd.h>
@@ -12,12 +14,15 @@
 #include "dcomm.h"
 
 #define LISTENQ 8 /*maximum number of client connections */
-
+#define FINISHED 29
+#define UNFINISHED 30
 
 // static void *sendSignal(void*);
 FILE *fp;
-char lastSignalRecv = XON;
 char buf[MAXLEN];
+
+int ShmID;
+int *lastSignalRecv;
 
 int sockfd,portno,pid,n;
 socklen_t client;
@@ -27,6 +32,21 @@ struct hostent *server;
 
 int main (int argc, char **argv)
 {
+
+  ShmID = shmget(IPC_PRIVATE, 4*sizeof(int), IPC_CREAT | 0666);
+  if (ShmID < 0) {
+        printf("*** shmget error (server) ***\n");
+        exit(1);
+  }
+  lastSignalRecv= (int *) shmat(ShmID, NULL, 0);
+  // if ((int) lastSignalRecv == -1) {
+  //     printf("*** shmat error (server) ***\n");
+  //     exit(1);
+  // }
+  lastSignalRecv[0]=XON;
+  lastSignalRecv[1]=UNFINISHED;
+
+
 
  if(argc<4) {
     printf("Argument must be 3\n");
@@ -98,10 +118,11 @@ int main (int argc, char **argv)
  if (fork()) {
   while(fscanf(fp,"%c",buf) != EOF) {
     bool allow = false;
-    while(lastSignalRecv == XOFF) {
+    while(lastSignalRecv[0] == XOFF) {
     if (!allow) {
-      printf("Waiting XON\n");
-      allow = true;
+      if (lastSignalRecv[0] == XON) {
+        allow = true;
+      }
     }
    }
    printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
@@ -109,11 +130,14 @@ int main (int argc, char **argv)
    bzero(buf,MAXLEN);
    counter++;
   }
+  lastSignalRecv[1]=FINISHED;
   printf("Exiting parent\n");
+  shmdt((void *) lastSignalRecv);
+  shmctl(ShmID, IPC_RMID, NULL);
   //close listening socket
   close (sockfd);
   } else {
-    while(true) {
+    while(lastSignalRecv[1]!=FINISHED) {
       int serv_len = sizeof(servaddr);
       char _buf[MAXLEN];
 
@@ -126,16 +150,16 @@ int main (int argc, char **argv)
          exit(1);
       }
 
-      lastSignalRecv = _buf[0];
-      if (lastSignalRecv == XOFF) {
+      lastSignalRecv[0] = _buf[0];
+      if (lastSignalRecv[0] == XOFF) {
           printf("XOFF accepted\n");
-      } else if (lastSignalRecv == XON) {
+      } else if (lastSignalRecv[0] == XON) {
           printf("XON accepted\n");
       }
 
     }
     printf("Exiting child...\n");
-    pthread_exit(0);  
+    exit(0);
   }
 }
 

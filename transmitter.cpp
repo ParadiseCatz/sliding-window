@@ -10,12 +10,15 @@
 #include <iostream>
 #include <netdb.h>
 #include <stdbool.h>
+#include <arpa/inet.h>
 
 #include "dcomm.h"
 
 #define LISTENQ 8 /*maximum number of client connections */
 #define FINISHED 29
 #define UNFINISHED 30
+
+#define SENDDELAY 200000
 
 // static void *sendSignal(void*);
 FILE *fp;
@@ -63,20 +66,21 @@ int main (int argc, char **argv)
    exit(1);
  }
 
-        // serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
-
+ 
  bzero((char *) &servaddr, sizeof(servaddr));
  servaddr.sin_family = AF_INET;
- 
- server = gethostbyname(argv[1]);
 
- if (server == NULL) {
-  fprintf(stderr,"ERROR, no such host\n");
-  exit(0);
- }
+ servaddr.sin_addr.s_addr = inet_addr(argv[1]);
 
- //preparation of the socket address
- bcopy((char*)server->h_addr, (char*)&servaddr.sin_addr.s_addr, server->h_length);
+ // server = gethostbyname(argv[1]);
+
+ // if (server == NULL) {
+ //  fprintf(stderr,"ERROR, no such host\n");
+ //  exit(0);
+ // }
+
+ // //preparation of the socket address
+ // bcopy((char*)server->h_addr, (char*)&servaddr.sin_addr.s_addr, server->h_length);
  servaddr.sin_port = htons(portno);
 
  // if (connect (sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0)
@@ -122,6 +126,7 @@ int main (int argc, char **argv)
     if (!allow) {
       if (showWait>100000) {
         printf("Waiting for XON \n");
+        usleep(SENDDELAY);
         showWait = 0;
       }
       if (lastSignalRecv[0] == XON) {
@@ -132,6 +137,7 @@ int main (int argc, char **argv)
    }
    printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
    sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
+   usleep(SENDDELAY);
    bzero(buf,MAXLEN);
    counter++;
   }
@@ -139,7 +145,7 @@ int main (int argc, char **argv)
   buf[0] = Endfile;
   sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
   printf("Exiting parent\n");
-  usleep(100);
+  usleep(5000000);
   shmdt((void *) lastSignalRecv);
   shmctl(ShmID, IPC_RMID, NULL);
   //close listening socket

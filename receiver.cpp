@@ -19,10 +19,10 @@
 #include <pthread.h>
 
 /* Delay to adjust speed of consuming buffer, in milliseconds */
-#define DELAY 500
+#define DELAY 500000
 
 /* Define receive buffer size */
-#define RXQSIZE 8
+#define RXQSIZE 20
 
 #define UPPER_LIMIT (RXQSIZE/2)
 #define LOWER_LIMIT (UPPER_LIMIT/2)

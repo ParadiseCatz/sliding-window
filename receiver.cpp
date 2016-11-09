@@ -84,6 +84,7 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
+	// PARENT PROCESS (Receive byte from socket)
 	while (true) {
 		c = *(rcvchar(sockfd, rxq));
 
@@ -97,6 +98,7 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
+	// join thread
 	if(pthread_join(child_thread,NULL)){
 		fprintf(stderr,"Error joining thread\n");
 		return 2;
@@ -152,22 +154,17 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 	Byte *current;
 	/* Nothing in the queue */
 	if (!queue->count) return (NULL);
-	/*
-	Insert code here.
 
-	Retrieve data from buffer, save it to "current" and "data"
-
-	If the number of characters in the receive buffer is below
-	certain level, then send XON.
-
-	Increment front index and check for wraparound.
-	*/
-
+	// Retrieve data from buffer, save it to "current" and "data"
 	current = &queue->data[queue->front];
 	data = current;
 
+	// Increment front index and check for wraparound.
+	queue->front = ((queue->front) + 1) % RXQSIZE;
 	(queue->count)--;
 
+	// If the number of characters in the receive buffer is below
+	// certain level, then send XON.
 	if (queue->count < LOWER_LIMIT && !send_xon) {
 		printf("Buffer < maximum lowerlimit\n");
 		send_xon = true;
@@ -182,7 +179,6 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 		}
 	}
 
-	queue->front = ((queue->front) + 1) % RXQSIZE;
 	return current;
 }
 

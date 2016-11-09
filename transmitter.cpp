@@ -96,9 +96,9 @@ int main (int argc, char **argv)
  //      exit(1);
  // }
 
- printf("Parent Thread PID : %d\n",getpid());
+ // printf("Parent Thread PID : %d\n",getpid());
 
- pthread_t signal_thread;
+ // pthread_t signal_thread;
 
  // if (pthread_create(&signal_thread,NULL,&sendSignal,NULL)) {
  //    printf("ERROR CREATING THREAD\n");
@@ -131,6 +131,8 @@ int main (int argc, char **argv)
    counter++;
   }
   lastSignalRecv[1]=FINISHED;
+  buf[0] = Endfile;
+  sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
   printf("Exiting parent\n");
   shmdt((void *) lastSignalRecv);
   shmctl(ShmID, IPC_RMID, NULL);

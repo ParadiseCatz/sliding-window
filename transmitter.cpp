@@ -114,15 +114,20 @@ int main (int argc, char **argv)
  }
 
  int counter = 1;
-
  if (fork()) {
   while(fscanf(fp,"%c",buf) != EOF) {
     bool allow = false;
+    int showWait = 0;
     while(lastSignalRecv[0] == XOFF) {
     if (!allow) {
+      if (showWait>100000) {
+        printf("Waiting for XON \n");
+        showWait = 0;
+      }
       if (lastSignalRecv[0] == XON) {
         allow = true;
       }
+      showWait++;
     }
    }
    printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
@@ -134,6 +139,7 @@ int main (int argc, char **argv)
   buf[0] = Endfile;
   sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
   printf("Exiting parent\n");
+  usleep(100);
   shmdt((void *) lastSignalRecv);
   shmctl(ShmID, IPC_RMID, NULL);
   //close listening socket

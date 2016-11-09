@@ -24,8 +24,8 @@
 /* Define receive buffer size */
 #define RXQSIZE 8
 
-#define UPPER_LIMIT RXQSIZE
-#define LOWER_LIMIT (RXQSIZE/2)
+#define UPPER_LIMIT (RXQSIZE/2)
+#define LOWER_LIMIT (UPPER_LIMIT/2)
 
 Byte temp[1];
 Byte rxbuf[RXQSIZE];
@@ -93,9 +93,16 @@ int main(int argc, char *argv[]) {
 		/* Quit on end of file */
 		if (c == Endfile) {
 			printf("Exit Parent\n");
-			exit(0);
+			break;
 		}
 	}
+
+	if(pthread_join(child_thread,NULL)){
+		fprintf(stderr,"Error joining thread\n");
+		return 2;
+	}
+
+	return 0;
 }
 
 static Byte *rcvchar(int sockfd, QTYPE *queue)
@@ -143,10 +150,8 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 static Byte *q_get(QTYPE *queue, Byte *data)
 {
 	Byte *current;
-
 	/* Nothing in the queue */
 	if (!queue->count) return (NULL);
-	printf("wewew\n");
 	/*
 	Insert code here.
 
@@ -178,7 +183,6 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 	}
 
 	queue->front = ((queue->front) + 1) % RXQSIZE;
-	printf("LEWT");
 	return current;
 }
 
@@ -191,15 +195,15 @@ static void *childProcess(void * param) {
 		Byte* data;
 		Byte* ret = q_get(rcvq_ptr, data);
 		if (ret) {
-			if (*data == Endfile) {
+			if (*ret == Endfile) {
 				printf("ENDFILE\n");
-				exit(0);
+				break;
 			}
 			consumeCount++;
-			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, *data);
+			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, *ret);
 		}
-
 		/* Can introduce some delay here. */
-		sleep(DELAY);
+		usleep(DELAY);
 	}
+	pthread_exit(0);
 }

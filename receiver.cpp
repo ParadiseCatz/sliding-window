@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,24 +27,26 @@
 #define UPPER_LIMIT RXQSIZE
 #define LOWER_LIMIT (RXQSIZE/2)
 
+Byte temp[1];
 Byte rxbuf[RXQSIZE];
 QTYPE rcvq = { 0, 0, 0, RXQSIZE, rxbuf };
 QTYPE *rxq = &rcvq;
 Byte sent_xonxoff = XON;
-Boolean send_xon = false, send_xoff = false;
+Boolean send_xon = true, send_xoff = false;
 
 struct sockaddr_in serv_addr, cli_addr;
 int cli_len = sizeof cli_addr;
 
 char sig[2];
+int byteCount = 0, consumeCount = 0;
 
 /* Socket */
 int sockfd; // listen on sock_fd
 
 /* Functions declaration */
 static Byte *rcvchar(int sockfd, QTYPE *queue);
-
 static Byte *q_get(QTYPE *, Byte *);
+static void *childProcess(void *);
 
 int main(int argc, char *argv[]) {
 	Byte c;
@@ -72,39 +76,24 @@ int main(int argc, char *argv[]) {
 	/* Initialize XON/XOFF flags */
 	sent_xonxoff = XON;
 
-	int byteCount = 0, consumeCount = 0;
 	/* Create child process */
-	if (fork()) { 	/*** IF PARENT PROCESS ***/
-		// printf("Adsdfas\n");
-		while (true) {
-			c = *(rcvchar(sockfd, rxq));
+	pthread_t child_thread;
 
-			byteCount++;
-			printf("Menerima byte ke-%d.\n", byteCount);
-			printf
-			/* Quit on end of file */
-			if (c == Endfile) {
-				printf("Exit Parent\n");
-				exit(0);
-			}
-		}
-	} else { 		/*** IF CHILD PROCESS ***/
-		// printf("LOL\n");
-		while (true) {
-			/* Call q_get */
-			Byte* data;
-			Byte* ret = q_get(rxq, data);
-			if (ret) {
-				if (*data == Endfile) {
-					printf("ENDFILE\n");
-					exit(0);
-				}
-				printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, data);
-				consumeCount++;
-			}
+	if(pthread_create(&child_thread, NULL, childProcess, &rcvq)){
+		fprintf(stderr, "Error creating thread\n");
+		return 1;
+	}
 
-			/* Can introduce some delay here. */
-			// sleep(DELAY);
+	while (true) {
+		c = *(rcvchar(sockfd, rxq));
+
+		byteCount++;
+		printf("Menerima byte ke-%d.\n", byteCount);
+
+		/* Quit on end of file */
+		if (c == Endfile) {
+			printf("Exit Parent\n");
+			exit(0);
 		}
 	}
 }
@@ -137,7 +126,6 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	Byte temp[1];
 	if (recvfrom(sockfd, temp, 1, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len) < 0) {
 		printf("Failed to read from socket\n");
 	}
@@ -146,7 +134,7 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	queue->rear = ((queue->rear) + 1) % RXQSIZE;
 	(queue->count)++;
 
-	return queue->data;
+	return temp;
 }
 
 /* q_get returns a pointer to the buffer where data is read or NULL if
@@ -190,6 +178,28 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 	}
 
 	queue->front = ((queue->front) + 1) % RXQSIZE;
-
+	printf("LEWT");
 	return current;
+}
+
+static void *childProcess(void * param) {
+
+	QTYPE *rcvq_ptr = (QTYPE *)param;
+
+	while (true) {
+		/* Call q_get */
+		Byte* data;
+		Byte* ret = q_get(rcvq_ptr, data);
+		if (ret) {
+			if (*data == Endfile) {
+				printf("ENDFILE\n");
+				exit(0);
+			}
+			consumeCount++;
+			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, *data);
+		}
+
+		/* Can introduce some delay here. */
+		sleep(DELAY);
+	}
 }

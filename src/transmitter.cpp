@@ -229,10 +229,10 @@ void resend(char thisFrameNum) {
 void listener() {
   while (switchFinish != FINISHED) {
     int serv_len = sizeof(servaddr);
-    char _buf[MAXLEN];
+    char thisBuf[MAXLEN];
 
     /*Receive signal*/
-    n = recvfrom(sockfd, _buf, strlen(_buf), 0, (struct sockaddr*)&servaddr, (socklen_t*)&serv_len);
+    n = recvfrom(sockfd, thisBuf, strlen(thisBuf), 0, (struct sockaddr*)&servaddr, (socklen_t*)&serv_len);
 
     if (n < 0) {
       perror("ERROR reading from socket");
@@ -240,7 +240,7 @@ void listener() {
     }
 
     /*Change Last Signal Receive*/
-    char signal = _buf[0];
+    char signal = thisBuf[0];
 
     switch (signal) {
     case XOFF: printf("XOFF accepted\n"); swithOnOff = XOFF; break;
@@ -249,9 +249,9 @@ void listener() {
 
     case ACK: 
       printf("ACK accepted\n"); 
-      if (getChecksum(buf, 1, 2) == buf[2]) {
+      if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
         printf("ACK checksum OK\n");
-        lastACK = max(lastACK, buf[1]);
+        lastACK = max(lastACK, thisBuf[1]);
       } else {
         printf("ACK checksum FAILED\n");
       }
@@ -259,9 +259,9 @@ void listener() {
 
     case NAK: 
       printf("NAK accepted\n"); 
-      if (getChecksum(buf, 1, 2) == buf[2]) {
+      if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
         printf("NAK checksum OK\n");
-        forceTimeout[buf[1]] = true;
+        forceTimeout[thisBuf[1]] = true;
       } else {
         printf("NAK checksum FAILED\n");
       }

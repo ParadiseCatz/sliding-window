@@ -42,6 +42,8 @@ struct hostent* server;
 int bufferPos = 0;
 char frameNum = 0;
 
+vector<thread> packetTimer;
+
 // shared varible
 int swithOnOff = XON;
 int switchFinish = UNFINISHED;
@@ -55,7 +57,7 @@ void listener();
 void pushToBuffer(char);
 void resend(char);
 void forceSend();
-char getChecksum(char*,int,int);
+char getChecksum(char*, int, int);
 
 int main(int argc, char** argv) {
   /*Check Argument*/
@@ -157,6 +159,8 @@ void forceSend() {
 
   bufferArchive.push_back(tmpBuf);
   sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+  thread thisPacketTimer (timer, frameNum);
+  packetTimer.push_back(thisPacketTimer);
   bzero(buf, MAXLEN);
   bufferPos = 0;
   frameNum++;
@@ -183,6 +187,8 @@ void pushToBuffer(char c) {
 
     bufferArchive.push_back(tmpBuf);
     sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    thread thisPacketTimer (timer, frameNum);
+    packetTimer.push_back(thisPacketTimer);
     bzero(buf, MAXLEN);
     bufferPos = 0;
     frameNum++;
@@ -247,24 +253,28 @@ void listener() {
 
     case XON: printf("XON accepted\n"); swithOnOff = XON; break;
 
-    case ACK: 
-      printf("ACK accepted\n"); 
+    case ACK:
+      printf("ACK accepted\n");
+
       if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
         printf("ACK checksum OK\n");
         lastACK = max(lastACK, thisBuf[1]);
       } else {
         printf("ACK checksum FAILED\n");
       }
+
       break;
 
-    case NAK: 
-      printf("NAK accepted\n"); 
+    case NAK:
+      printf("NAK accepted\n");
+
       if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
         printf("NAK checksum OK\n");
         forceTimeout[thisBuf[1]] = true;
       } else {
         printf("NAK checksum FAILED\n");
       }
+
       break;
 
     default: printf("ERROR get unknown signal %d\n", signal);
@@ -276,9 +286,10 @@ void listener() {
 
 char getChecksum(char *c, int start, int end) {
   char checksum = 0;
-  for (int i = start; i < end; ++i)
-  {
+
+  for (int i = start; i < end; ++i) {
     checksum ^= c[i];
   }
+
   return checksum;
 }

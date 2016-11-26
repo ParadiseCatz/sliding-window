@@ -11,150 +11,274 @@
 #include <netdb.h>
 #include <stdbool.h>
 #include <arpa/inet.h>
+#include <thread>
+#include <ctime>
+#include <chrono>
+#include <vector>
 
 #include "dcomm.h"
 
 #define LISTENQ 8 /*maximum number of client connections */
 #define FINISHED 29 /*signal symbol to child process fork*/
-#define UNFINISHED 30 
+#define UNFINISHED 30
 
 #define SENDDELAY 200000 /*delay when sending byte*/
+#define WINDOWSIZE 123
+#define TIMEOUTDELAY 5000000
+#define TIMEOUTDELAYSTEP 500000
+#define MAXPACKET 1024
 
-FILE *fp;
+using namespace std;
+
+FILE* fp;
 char buf[MAXLEN];
 
-int ShmID;
-int *lastSignalRecv;
-
-int sockfd,portno,pid,n;
+int sockfd, portno, pid, n;
 socklen_t client;
 
 struct sockaddr_in servaddr;
-struct hostent *server;
+struct hostent* server;
 
-int main (int argc, char **argv)
-{
+int bufferPos = 0;
+char frameNum = 0;
 
-  /*Create share Memory*/
-  ShmID = shmget(IPC_PRIVATE, 4*sizeof(int), IPC_CREAT | 0666);
-  if (ShmID < 0) {
-        printf("*** shmget error (server) ***\n");
-        exit(1);
-  }
-  lastSignalRecv= (int *) shmat(ShmID, NULL, 0);
-  lastSignalRecv[0]=XON;
-  lastSignalRecv[1]=UNFINISHED;
+// shared varible
+int swithOnOff = XON;
+int switchFinish = UNFINISHED;
+char lastACK = 0;
+bool forceTimeout[MAXPACKET];
+vector<vector<char> > bufferArchive;
+// end shared variable
 
+void sender(FILE*);
+void listener();
+void pushToBuffer(char);
+void resend(char);
+void forceSend();
+char getChecksum(char*,int,int);
 
+int main(int argc, char** argv) {
   /*Check Argument*/
- if(argc<4) {
+  if (argc < 4) {
     printf("Argument must be 3\n");
     exit(1);
- }
+  }
 
- /*Convert argument port from string to int*/
- portno = atoi(argv[2]); 
+  /*Convert argument port from string to int*/
+  portno = atoi(argv[2]);
 
- /*creation of the socket*/
- sockfd = socket (AF_INET, SOCK_DGRAM, 0);
- if (sockfd < 0)
- {
-   printf("SOCKET ERROR\n");
-   exit(1);
- }
+  /*Open file*/
+  fp = fopen(argv[3], "r");
 
- /*reset memory*/
- bzero((char *) &servaddr, sizeof(servaddr));
-
- /*servaddr attribute*/
- servaddr.sin_family = AF_INET;
- servaddr.sin_addr.s_addr = inet_addr(argv[1]);
- servaddr.sin_port = htons(portno);
-
- //// Jika menggunakan hostname di argv[1]
- // server = gethostbyname(argv[1]);
-
- // if (server == NULL) {
- //  fprintf(stderr,"ERROR, no such host\n");
- //  exit(0);
- // }
- // bcopy((char*)server->h_addr, (char*)&servaddr.sin_addr.s_addr, server->h_length);
-
-
- /*Open file*/
- fp = fopen(argv[3],"r");
- if (fp == NULL) {
+  if (fp == NULL) {
     printf("ERROR OPENING FILE\n");
     exit(1);
- }
+  }
 
- /*Create Fork Process*/
- int counter = 1;
- if (fork()) {
-  while(fscanf(fp,"%c",buf) != EOF) {
+
+  /*creation of the socket*/
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+
+  if (sockfd < 0) {
+    printf("SOCKET ERROR\n");
+    exit(1);
+  }
+
+  /*reset memory*/
+  bzero((char*)&servaddr, sizeof(servaddr));
+
+  /*servaddr attribute*/
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_addr.s_addr = inet_addr(argv[1]);
+  servaddr.sin_port = htons(portno);
+
+  /*Create Thread Process*/
+  thread senderThread (sender, fp);     // spawn new thread that calls foo()
+  thread listenerThread (listener);
+
+  senderThread.join();
+  listenerThread.join();
+
+
+}
+
+
+void sender(FILE* fp) {
+  char currentChar;
+
+  while (fscanf(fp, "%c", &currentChar) != EOF) {
     bool allow = false;
     int showWait = 0;
 
     /*Waiting for XON*/
-    while(lastSignalRecv[0] == XOFF) {
-    if (!allow) {
-      if (showWait>100000) {
-        printf("Waiting for XON \n");
-        usleep(SENDDELAY);
-        showWait = 0;
-      }
-      if (lastSignalRecv[0] == XON) {
-        allow = true;
-      }
-      showWait++;
-    }
-   }
+    while (swithOnOff == XOFF || frameNum - lastACK > WINDOWSIZE) {
+      if (!allow) {
+        if (showWait > 100000) {
+          printf("Waiting for XON \n");
+          usleep(SENDDELAY);
+          showWait = 0;
+        }
 
-  /*Send byte to receiver*/
-   printf("Mengirim byte ke-%d: '%s'\n",counter,buf);
-   sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
-   usleep(SENDDELAY);
-   bzero(buf,MAXLEN);
-   counter++;
+        if (swithOnOff == XON) {
+          allow = true;
+        }
+
+        showWait++;
+      }
+    }
+
+    pushToBuffer(currentChar);
   }
-  
+
   /*Send End Signal*/
-  lastSignalRecv[1]=FINISHED;
-  buf[0] = Endfile;
-  sendto(sockfd,buf,strlen(buf),0,(struct sockaddr*)&servaddr,sizeof(servaddr));
-  printf("Exiting parent\n");
+  switchFinish = FINISHED;
+  pushToBuffer(Endfile);
+
+  if (bufferPos) {
+    forceSend();
+  }
+
+  printf("Exiting Sender Thread\n");
   usleep(5000000);
-  
-  /*Remove shared memory*/
-  shmdt((void *) lastSignalRecv);
-  shmctl(ShmID, IPC_RMID, NULL);
 
   /*Close Socket*/
-  close (sockfd);
-  } else {
-    /* Child Process*/
-    while(lastSignalRecv[1]!=FINISHED) {
-      int serv_len = sizeof(servaddr);
-      char _buf[MAXLEN];
+  close(sockfd);
+}
 
-      /*Receive signal*/
-      n = recvfrom(sockfd,_buf,strlen(_buf),0,(struct sockaddr*)&servaddr,(socklen_t*) &serv_len);
+// force socket send even when buffer is not full
+void forceSend() {
+  buf[bufferPos++] = ETX;
+  buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
+  vector<char> tmpBuf;
 
-      if (n < 0) {
-         perror("ERROR reading from socket");
-         exit(1);
-      }
-
-      /*Change Last Signal Receive*/
-      lastSignalRecv[0] = _buf[0];
-      if (lastSignalRecv[0] == XOFF) {
-          printf("XOFF accepted\n");
-      } else if (lastSignalRecv[0] == XON) {
-          printf("XON accepted\n");
-      }
-
-    }
-    printf("Exiting child...\n");
-    exit(0);
+  for (int i = 0; i < strlen(buf); ++i) {
+    tmpBuf.push_back(buf[i]);
   }
+
+  bufferArchive.push_back(tmpBuf);
+  sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+  bzero(buf, MAXLEN);
+  bufferPos = 0;
+  frameNum++;
+}
+
+// delay socket send until buffer full
+void pushToBuffer(char c) {
+  if (bufferPos == 0) {
+    buf[bufferPos++] = SOH;
+    buf[bufferPos++] = frameNum;
+    buf[bufferPos++] = STX;
+  }
+
+  buf[bufferPos++] = c;
+
+  if (bufferPos == MAXLEN - 2) {
+    buf[bufferPos++] = ETX;
+    buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
+    vector<char> tmpBuf;
+
+    for (int i = 0; i < strlen(buf); ++i) {
+      tmpBuf.push_back(buf[i]);
+    }
+
+    bufferArchive.push_back(tmpBuf);
+    sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    bzero(buf, MAXLEN);
+    bufferPos = 0;
+    frameNum++;
+  }
+}
+
+//timer countdown for each packet
+void timer(char thisFrameNum) {
+  chrono::steady_clock::time_point startTime = chrono::steady_clock::now();
+  chrono::steady_clock::time_point currentTime = chrono::steady_clock::now();
+
+  while (lastACK <= thisFrameNum) {
+    while (chrono::duration_cast<chrono::microseconds>(currentTime - startTime).count() < TIMEOUTDELAY && !forceTimeout[thisFrameNum]) {
+      usleep(TIMEOUTDELAYSTEP);
+      currentTime = chrono::steady_clock::now();
+    }
+
+    if (forceTimeout[thisFrameNum]) {
+      forceTimeout[thisFrameNum] = false;
+      resend(thisFrameNum);
+      startTime = chrono::steady_clock::now();
+      continue;
+    }
+
+    if (lastACK <= thisFrameNum)
+      return;
+
+    resend(thisFrameNum);
+    startTime = chrono::steady_clock::now();
+  }
+}
+
+// resenc packet using buffer archive
+void resend(char thisFrameNum) {
+  char thisBuf[MAXLEN];
+
+  for (int i = 0; i < bufferArchive[thisFrameNum].size(); ++i) {
+    thisBuf[i] = bufferArchive[thisFrameNum][i];
+  }
+
+  sendto(sockfd, thisBuf, strlen(thisBuf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+}
+
+void listener() {
+  while (switchFinish != FINISHED) {
+    int serv_len = sizeof(servaddr);
+    char _buf[MAXLEN];
+
+    /*Receive signal*/
+    n = recvfrom(sockfd, _buf, strlen(_buf), 0, (struct sockaddr*)&servaddr, (socklen_t*)&serv_len);
+
+    if (n < 0) {
+      perror("ERROR reading from socket");
+      exit(1);
+    }
+
+    /*Change Last Signal Receive*/
+    char signal = _buf[0];
+
+    switch (signal) {
+    case XOFF: printf("XOFF accepted\n"); swithOnOff = XOFF; break;
+
+    case XON: printf("XON accepted\n"); swithOnOff = XON; break;
+
+    case ACK: 
+      printf("ACK accepted\n"); 
+      if (getChecksum(buf, 1, 2) == buf[2]) {
+        printf("ACK checksum OK\n");
+        lastACK = max(lastACK, buf[1]);
+      } else {
+        printf("ACK checksum FAILED\n");
+      }
+      break;
+
+    case NAK: 
+      printf("NAK accepted\n"); 
+      if (getChecksum(buf, 1, 2) == buf[2]) {
+        printf("NAK checksum OK\n");
+        forceTimeout[buf[1]] = true;
+      } else {
+        printf("NAK checksum FAILED\n");
+      }
+      break;
+
+    default: printf("ERROR get unknown signal %d\n", signal);
+    }
+  }
+
+  printf("Exiting Listener Thread\n");
+}
+
+char getChecksum(char *c, int start, int end) {
+  char checksum = 0;
+  for (int i = start; i < end; ++i)
+  {
+    checksum ^= c[i];
+  }
+  return checksum;
 }

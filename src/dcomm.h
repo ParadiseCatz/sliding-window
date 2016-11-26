@@ -24,6 +24,7 @@
 /* Const */
 #define BYTESIZE 256 /* The maximum value of a byte */
 #define MAXLEN 1024 /* Maximum messages length */
+#define WINDOWSIZE 123
 
 typedef bool Boolean;
 

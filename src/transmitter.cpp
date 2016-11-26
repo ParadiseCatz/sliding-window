@@ -15,6 +15,7 @@
 #include <ctime>
 #include <chrono>
 #include <vector>
+#include <algorithm>
 
 #include "dcomm.h"
 
@@ -23,12 +24,15 @@
 #define UNFINISHED 30
 
 #define SENDDELAY 200000 /*delay when sending byte*/
-#define WINDOWSIZE 123
 #define TIMEOUTDELAY 5000000
 #define TIMEOUTDELAYSTEP 500000
-#define MAXPACKET 1024
 
 using namespace std;
+
+union Frame {
+  int intVersion;
+  char charVersion[4];
+};
 
 FILE* fp;
 char buf[MAXLEN];
@@ -40,29 +44,30 @@ struct sockaddr_in servaddr;
 struct hostent* server;
 
 int bufferPos = 0;
-char frameNum = 0;
-
-vector<thread> packetTimer;
+Frame frameNum;
 
 // shared varible
 int swithOnOff = XON;
 int switchFinish = UNFINISHED;
-char lastACK = 0;
-bool forceTimeout[MAXPACKET];
+int lastACK;
+vector<bool> forceTimeout;
 vector<vector<char> > bufferArchive;
 // end shared variable
 
 void sender(FILE*);
 void listener();
 void pushToBuffer(char);
-void resend(char);
+void packetTimer(int);
+void resend(int);
 void forceSend();
 char getChecksum(char*, int, int);
+Frame toFrame(char*);
+Frame toFrame(int);
 
 int main(int argc, char** argv) {
   /*Check Argument*/
   if (argc < 4) {
-    printf("Argument must be 3\n");
+    printf("ERROR usage ./transmitter <receiver addr> <reciever port> <filepath>\n");
     exit(1);
   }
 
@@ -113,7 +118,7 @@ void sender(FILE* fp) {
     int showWait = 0;
 
     /*Waiting for XON*/
-    while (swithOnOff == XOFF || frameNum - lastACK > WINDOWSIZE) {
+    while (swithOnOff == XOFF || frameNum.intVersion - lastACK > WINDOWSIZE) {
       if (!allow) {
         if (showWait > 100000) {
           printf("Waiting for XON \n");
@@ -149,6 +154,7 @@ void sender(FILE* fp) {
 
 // force socket send even when buffer is not full
 void forceSend() {
+  // create footer
   buf[bufferPos++] = ETX;
   buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
   vector<char> tmpBuf;
@@ -158,24 +164,30 @@ void forceSend() {
   }
 
   bufferArchive.push_back(tmpBuf);
+  forceTimeout.push_back(false);
   sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
-  thread thisPacketTimer (timer, frameNum);
-  packetTimer.push_back(thisPacketTimer);
+  thread thisPacketTimer (packetTimer, frameNum.intVersion);
   bzero(buf, MAXLEN);
   bufferPos = 0;
-  frameNum++;
+  frameNum.intVersion++;
 }
 
 // delay socket send until buffer full
 void pushToBuffer(char c) {
+  // create header
   if (bufferPos == 0) {
     buf[bufferPos++] = SOH;
-    buf[bufferPos++] = frameNum;
+    buf[bufferPos++] = frameNum.charVersion[0];
+    buf[bufferPos++] = frameNum.charVersion[1];
+    buf[bufferPos++] = frameNum.charVersion[2];
+    buf[bufferPos++] = frameNum.charVersion[3];
     buf[bufferPos++] = STX;
   }
 
+  // insert data
   buf[bufferPos++] = c;
 
+  // create footer
   if (bufferPos == MAXLEN - 2) {
     buf[bufferPos++] = ETX;
     buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
@@ -186,22 +198,25 @@ void pushToBuffer(char c) {
     }
 
     bufferArchive.push_back(tmpBuf);
+    forceTimeout.push_back(false);
     sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
-    thread thisPacketTimer (timer, frameNum);
-    packetTimer.push_back(thisPacketTimer);
+    thread thisPacketTimer (packetTimer, frameNum.intVersion);
     bzero(buf, MAXLEN);
     bufferPos = 0;
-    frameNum++;
+    frameNum.intVersion++;
   }
 }
 
 //timer countdown for each packet
-void timer(char thisFrameNum) {
-  chrono::steady_clock::time_point startTime = chrono::steady_clock::now();
-  chrono::steady_clock::time_point currentTime = chrono::steady_clock::now();
+void packetTimer(int thisFrameNum) {
+  auto startTime = chrono::steady_clock::now();
+  auto currentTime = chrono::steady_clock::now();
 
   while (lastACK <= thisFrameNum) {
-    while (chrono::duration_cast<chrono::microseconds>(currentTime - startTime).count() < TIMEOUTDELAY && !forceTimeout[thisFrameNum]) {
+    while (
+      chrono::duration_cast<chrono::microseconds>(currentTime - startTime).count() < TIMEOUTDELAY &&
+      !forceTimeout[thisFrameNum]
+    ) {
       usleep(TIMEOUTDELAYSTEP);
       currentTime = chrono::steady_clock::now();
     }
@@ -221,8 +236,8 @@ void timer(char thisFrameNum) {
   }
 }
 
-// resenc packet using buffer archive
-void resend(char thisFrameNum) {
+// resend packet using buffer archive
+void resend(int thisFrameNum) {
   char thisBuf[MAXLEN];
 
   for (int i = 0; i < bufferArchive[thisFrameNum].size(); ++i) {
@@ -256,9 +271,9 @@ void listener() {
     case ACK:
       printf("ACK accepted\n");
 
-      if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
+      if (getChecksum(thisBuf, 1, 5) == thisBuf[6]) {
         printf("ACK checksum OK\n");
-        lastACK = max(lastACK, thisBuf[1]);
+        lastACK = max(lastACK, toFrame(thisBuf + 1).intVersion);
       } else {
         printf("ACK checksum FAILED\n");
       }
@@ -268,9 +283,9 @@ void listener() {
     case NAK:
       printf("NAK accepted\n");
 
-      if (getChecksum(thisBuf, 1, 2) == thisBuf[2]) {
+      if (getChecksum(thisBuf, 1, 5) == thisBuf[6]) {
         printf("NAK checksum OK\n");
-        forceTimeout[thisBuf[1]] = true;
+        forceTimeout[toFrame(thisBuf + 1).intVersion] = true;
       } else {
         printf("NAK checksum FAILED\n");
       }
@@ -292,4 +307,18 @@ char getChecksum(char *c, int start, int end) {
   }
 
   return checksum;
+}
+
+Frame toFrame(char* c) {
+  Frame ret;
+  ret.charVersion[0] = c[0];
+  ret.charVersion[1] = c[1];
+  ret.charVersion[2] = c[2];
+  ret.charVersion[3] = c[3];
+  return ret;
+}
+Frame toFrame(int intVersion) {
+  Frame ret;
+  ret.intVersion = intVersion;
+  return ret;
 }

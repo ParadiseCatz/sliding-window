@@ -24,7 +24,8 @@
 /* Const */
 #define BYTESIZE 256 /* The maximum value of a byte */
 #define MAXLEN 1024 /* Maximum messages length */
-#define WINDOWSIZE 123
+#define FRAMESIZE 16 /* Maximum frame size */
+#define WINDOWSIZE 4 /* Window size for sliding window */
 
 typedef bool Boolean;
 
@@ -41,9 +42,6 @@ typedef struct QTYPE
 
 typedef struct MESGB
 {
-	unsigned int soh;
-	unsigned int stx;
-	unsigned int etx;
 	Byte checksum;
 	Byte msgno;
 	Byte *data;

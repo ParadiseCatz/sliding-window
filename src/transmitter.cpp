@@ -150,8 +150,9 @@ void sender(FILE* fp) {
 // force socket send even when buffer is not full
 void forceSend() {
   // create footer
+  char checksum = getChecksum(buf, 6, bufferPos);
   buf[bufferPos++] = ETX;
-  buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
+  buf[bufferPos++] = checksum;
   vector<char> tmpBuf;
 
   for (int i = 0; i < strlen(buf); ++i) {
@@ -185,7 +186,7 @@ void pushToBuffer(char c) {
   // create footer
   if (bufferPos == MAXLEN - 2) {
     buf[bufferPos++] = ETX;
-    buf[bufferPos++] = getChecksum(buf, 3, bufferPos - 2);
+    buf[bufferPos++] = getChecksum(buf, 6, MAXLEN - 2);
     vector<char> tmpBuf;
 
     for (int i = 0; i < strlen(buf); ++i) {

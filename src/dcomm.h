@@ -68,4 +68,21 @@ Frame toFrame(int intVersion) {
   return ret;
 }
 
+int toInt(char* c) {
+  Frame ret;
+  ret.charVersion[0] = c[1];
+  ret.charVersion[0] = c[2];
+  ret.charVersion[0] = c[3];
+  ret.charVersion[0] = c[4];
+
+  return ret.intVersion;
+
+}
+
+bool isAck(char* c) {
+  
+
+}
+
+
 #endif

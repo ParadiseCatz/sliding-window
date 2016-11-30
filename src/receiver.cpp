@@ -140,16 +140,18 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	int len = recvfrom(sockfd, temp, FRAMESIZE, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len);
-	if (len < 0) {
-		printf("Failed to read from socket\n");
-	}
+
 
 	queue->data[queue->rear] = temp;
 	queue->rear = ((queue->rear) + 1) % RXQSIZE;
 	(queue->count)++;
 
 	*/
+
+	int len = recvfrom(sockfd, temp, FRAMESIZE, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len);
+	if (len < 0) {
+		printf("Failed to read from socket\n");
+	}
 
 	// check checksum + send ACK/NAK
 	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 3, len - 2)) {

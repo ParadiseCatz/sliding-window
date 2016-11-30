@@ -28,7 +28,7 @@
 #define LOWER_LIMIT (UPPER_LIMIT/2)
 
 Byte temp[FRAMESIZE];
-Byte rxbuf[RXQSIZE][FRAMESIZE];
+Byte* rxbuf;
 QTYPE rcvq = { 0, 0, 0, RXQSIZE, rxbuf };
 QTYPE *rxq = &rcvq;
 Byte sent_xonxoff = XON;

@@ -125,6 +125,7 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	Return a pointer to the buffer where data is put.
 	*/
 
+	/* code sblom
 	if (queue->count >= UPPER_LIMIT && !send_xoff) {
 		printf("Buffer > minimum upperlimit\n");
 		send_xon = false;
@@ -148,6 +149,8 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	queue->rear = ((queue->rear) + 1) % RXQSIZE;
 	(queue->count)++;
 
+	*/
+
 	// check checksum + send ACK/NAK
 	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 3, len - 2)) {
 		//send ACK
@@ -159,10 +162,13 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		} else {
 			printf("Gagal mengirim ACK.\n");
 		}
+
+		// add data to buffer
+		queue->data[toInt(temp)] = temp; // toInt blom!!
 	} else {
 		//send NAK
 		Frame frameNumber;
-		frameNumber = toFrame(lastIdx);
+		frameNumber = toFrame(lastIdx); //toFrame ga yakin jalan
 
 		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim NAK.\n");
@@ -171,11 +177,10 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	// add data to buffer
-	queue->data[toInt(temp)] = temp;
+	
 
 	// slide sliding window
-	while (isACK(queue->data[queue->rear])) { //implement isACK
+	while (isACK(queue->data[queue->rear])) { //implement isACK <- blom!!
 		queue->rear = ((queue->rear) + 1) % RXQSIZE;
 		(queue->count)++;
 	}

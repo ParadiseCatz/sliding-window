@@ -42,7 +42,7 @@ typedef struct QTYPE
 	unsigned int front;
 	unsigned int rear;
 	unsigned int maxsize;
-	Byte **data;
+	Byte *data[FRAMESIZE];
 } QTYPE;
 
 typedef struct MESGB

@@ -135,9 +135,10 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	if (recvfrom(sockfd, temp, 1, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len) < 0) {
+	if (recvfrom(sockfd, temp, 16, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len) < 0) {
 		printf("Failed to read from socket\n");
 	}
+	printf("Masuk %s\n",temp);
 
 	queue->data[queue->rear] = temp[0];
 	queue->rear = ((queue->rear) + 1) % RXQSIZE;

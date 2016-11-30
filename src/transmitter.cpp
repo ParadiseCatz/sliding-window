@@ -17,6 +17,8 @@
 #include <vector>
 #include <algorithm>
 
+#include <regex.h>
+
 #include "dcomm.h"
 
 #define LISTENQ 8 /*maximum number of client connections */
@@ -59,6 +61,9 @@ char getChecksum(char*, int, int);
 Frame toFrame(char*);
 Frame toFrame(int);
 
+
+bool is_ip_address;
+
 int main(int argc, char** argv) {
   /*Check Argument*/
   if (argc < 4) {
@@ -90,9 +95,42 @@ int main(int argc, char** argv) {
   bzero((char*)&servaddr, sizeof(servaddr));
 
   /*servaddr attribute*/
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_addr.s_addr = inet_addr(argv[1]);
-  servaddr.sin_port = htons(portno);
+  // servaddr.sin_family = AF_INET;
+  // servaddr.sin_addr.s_addr = inet_addr(argv[1]);
+  // servaddr.sin_port = htons(portno);
+
+int r;
+  regex_t reg;
+
+    if (r = regcomp(&reg, "^(\\d{0,3}\\.){3}\\d{0,3}$", REG_NOSUB | REG_EXTENDED) ){
+        char errbuf[1024];
+        regerror(r, &reg, errbuf, sizeof(errbuf));
+        printf("error: %s\n", errbuf);
+        return 1;
+    }
+    
+    if (regexec(&reg, argv[1],0,NULL,0) != REG_NOMATCH){
+    is_ip_address = true;
+  }
+
+    if ( is_ip_address ) {
+        servaddr.sin_addr.s_addr = inet_addr(argv[1]);
+
+        printf("Membuat socket untuk koneksi ke %s:%s ...", argv[1], argv[2]);
+    } else {
+        /* Map host name to ip address */
+        server = gethostbyname(argv[1]);
+
+        if (!server) {
+           fprintf(stderr,"ERROR, no such host\n");
+           exit(0);
+        }
+
+        bcopy((char *)server->h_addr, (char *)&servaddr.sin_addr.s_addr, server->h_length);
+    }
+    servaddr.sin_port = htons(portno);
+
+
 
   /*Create Thread Process*/
   printf("CREATING THREAD\n");
@@ -111,12 +149,12 @@ void sender(FILE* fp) {
   char currentChar;
 
   int charCounter = 0;
-  while (fscanf(fp, "%c", &currentChar) != EOF) x{
+  while (fscanf(fp, "%c", &currentChar) != EOF) {
     bool allow = false;
     int showWait = 0;
 
     /*Waiting for XON*/
-    while (swithOnOff == XOFF || frameNum.intVersion - lastACK > WINDOWSIZE) {
+    while (swithOnOff == XOFF || frameNum.intVersion - lastACK >= WINDOWSIZE) {
       if (!allow) {
         if (showWait > 100000) {
           printf("Waiting for XON \n");
@@ -159,13 +197,13 @@ void forceSend() {
   buf[bufferPos++] = checksum;
   vector<char> tmpBuf;
 
-  for (int i = 0; i < strlen(buf); ++i) {
+  for (int i = 0; i < bufferPos; ++i) {
     tmpBuf.push_back(buf[i]);
   }
 
   bufferArchive.push_back(tmpBuf);
   forceTimeout.push_back(false);
-  sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+  sendto(sockfd, buf, bufferPos, 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
   thread thisPacketTimer (packetTimer, frameNum.intVersion);
   thisPacketTimer.detach();
   bzero(buf, MAXLEN);
@@ -189,18 +227,25 @@ void pushToBuffer(char c) {
   buf[bufferPos++] = c;
 
   // create footer
-  if (bufferPos == MAXLEN - 2) {
+  if (bufferPos == FRAMESIZE - 2) {
     buf[bufferPos++] = ETX;
-    buf[bufferPos++] = getChecksum(buf, 6, MAXLEN - 2);
+    buf[bufferPos++] = getChecksum(buf, 6, FRAMESIZE - 2);
     vector<char> tmpBuf;
-
-    for (int i = 0; i < strlen(buf); ++i) {
+    for (int i = 0; i < bufferPos; ++i) {
       tmpBuf.push_back(buf[i]);
     }
 
     bufferArchive.push_back(tmpBuf);
     forceTimeout.push_back(false);
-    sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+    for (int i=0;i<FRAMESIZE;i++) {
+      printf("Isi %d %d\n",i,buf[i]);
+    }
+    if(sendto(sockfd, buf, bufferPos, 0, (struct sockaddr*)&servaddr, sizeof(servaddr))>0){
+      printf("sesuatu\n");
+    }else{
+      printf("seduatu\n");
+    }
+    printf("AKKA");
     thread thisPacketTimer (packetTimer, frameNum.intVersion);
     thisPacketTimer.detach();
     bzero(buf, MAXLEN);
@@ -253,10 +298,10 @@ void listener() {
   printf("START LISTENER THREAD\n");
   while (switchFinish != FINISHED) {
     int serv_len = sizeof(servaddr);
-    char thisBuf[MAXLEN];
+    char thisBuf[6];
 
     /*Receive signal*/
-    n = recvfrom(sockfd, thisBuf, strlen(thisBuf), 0, (struct sockaddr*)&servaddr, (socklen_t*)&serv_len);
+    n = recvfrom(sockfd, thisBuf, 6, 0, (struct sockaddr*)&servaddr, (socklen_t*)&serv_len);
 
     if (n < 0) {
       perror("ERROR reading from socket");
@@ -274,7 +319,7 @@ void listener() {
     case ACK:
       printf("ACK accepted\n");
 
-      if (getChecksum(thisBuf, 1, 5) == thisBuf[6]) {
+      if (getChecksum(thisBuf, 1, 5) == thisBuf[5]) {
         printf("ACK checksum OK\n");
         lastACK = max(lastACK, toFrame(thisBuf + 1).intVersion);
       } else {
@@ -286,7 +331,7 @@ void listener() {
     case NAK:
       printf("NAK accepted\n");
 
-      if (getChecksum(thisBuf, 1, 5) == thisBuf[6]) {
+      if (getChecksum(thisBuf, 1, 5) == thisBuf[5]) {
         printf("NAK checksum OK\n");
         forceTimeout[toFrame(thisBuf + 1).intVersion] = true;
       } else {

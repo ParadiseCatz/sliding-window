@@ -106,7 +106,7 @@ int main(int argc, char *argv[]) {
 		c = *(rcvchar(sockfd, rxq));
 
 		packetCount++;
-		printf("Menerima byte ke-%d.\n", packetCount);
+		printf("Menerima packet ke-%d.\n", packetCount);
 	}
 
 	// join thread
@@ -125,6 +125,7 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		printf("Failed to read from socket\n");
 	}
 	printf("RECEIVED: %s\n", temp);
+	printf("LEN: %d\n", len);
 
 	// check checksum + send ACK/NAK
 	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 6, len - 2)) {
@@ -132,26 +133,34 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		
 
 		int receivedFrameNumber = toFrame(temp + 1).intVersion;
+		printf("RECEIVED PACKET NUMBER: %d\n", receivedFrameNumber);
 		if (lastIdx + WINDOWSIZE < lastIdx) {
 			if (lastIdx + WINDOWSIZE <= receivedFrameNumber && receivedFrameNumber < lastIdx)
 			{
+				printf("FAIL 1\n");
 				return temp;
 			}
 		} else {
 			if (!(lastIdx <= receivedFrameNumber && receivedFrameNumber < lastIdx + WINDOWSIZE))
 			{
+				printf("FAIL 2\n");
 				return temp;
 			}
 		}
-		queue->data[receivedFrameNumber%RXQSIZE] = temp;
+
+		char* newdata = (char*)malloc(sizeof(char)*len);
+		for (int i = 0; i < len; ++i)
+		{
+			newdata[i] = temp[i];
+		}
+		queue->data[receivedFrameNumber%RXQSIZE] = newdata;
 		while (queue->data[lastIdx%RXQSIZE][0]){
-			lastIdx++;
 			queue->rear = ((queue->rear) + 1) % RXQSIZE;
 			(queue->count)++;
 			lastIdx++;
 		}
-		char *sig = createACKPacket(lastIdx);
-		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+		char *responsePacket = createACKPacket(lastIdx);
+		if (sendto(sockfd, responsePacket, 6, 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim ACK %d.\n",lastIdx);
 		} else {
 			printf("Gagal mengirim ACK.\n");
@@ -159,10 +168,8 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	} else {
 		//send NAK
 		int receivedFrameNumber = toFrame(temp + 1).intVersion;
-
-		char *sig = createACKPacket(receivedFrameNumber);
-
-		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+		char *responsePacket = createNAKPacket(receivedFrameNumber);
+		if (sendto(sockfd, responsePacket, 6, 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim NAK.\n");
 		} else {
 			printf("Gagal mengirim NAK.\n");
@@ -209,12 +216,14 @@ static void *childProcess(void * param) {
 		{
 			if (current[i] == Endfile) {
 				printf("ENDFILE\n");
+				exit(0);
 				pthread_exit(0);
 			}
 			consumeCount++;
 			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, current[i]);
 			usleep(DELAY);
 		}
+		printf("FINSHED CONSUME PACKET: %d\n", currentFrameNumber);
 
 		// Increment front index and check for wraparound.
 		memset(queue->data[queue->front],0,sizeof queue->data[queue->front]);
@@ -265,7 +274,7 @@ char* createACKPacket(int frameNumber) {
 	ret[2] = frameNumberChar[1];
 	ret[3] = frameNumberChar[2];
 	ret[4] = frameNumberChar[3];
-	ret[5] = getChecksum(ret + 1, 1, 5);
+	ret[5] = getChecksum(ret, 1, 5);
 	return ret;
 }
 
@@ -278,6 +287,6 @@ char* createNAKPacket(int frameNumber) {
 	ret[2] = frameNumberChar[1];
 	ret[3] = frameNumberChar[2];
 	ret[4] = frameNumberChar[3];
-	ret[5] = getChecksum(ret + 1, 1, 5);
+	ret[5] = getChecksum(ret, 1, 5);
 	return ret;
 }

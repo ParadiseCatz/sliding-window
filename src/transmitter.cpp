@@ -95,6 +95,7 @@ int main(int argc, char** argv) {
   servaddr.sin_port = htons(portno);
 
   /*Create Thread Process*/
+  printf("CREATING THREAD\n");
   thread senderThread (sender, fp);     // spawn new thread that calls foo()
   thread listenerThread (listener);
 
@@ -106,9 +107,11 @@ int main(int argc, char** argv) {
 
 
 void sender(FILE* fp) {
+  printf("START SENDER THREAD\n");
   char currentChar;
 
-  while (fscanf(fp, "%c", &currentChar) != EOF) {
+  int charCounter = 0;
+  while (fscanf(fp, "%c", &currentChar) != EOF) x{
     bool allow = false;
     int showWait = 0;
 
@@ -128,7 +131,8 @@ void sender(FILE* fp) {
         showWait++;
       }
     }
-
+    printf("PUSHING CHAR no. %d: %c\n", charCounter, currentChar);
+    charCounter++;
     pushToBuffer(currentChar);
   }
 
@@ -163,6 +167,7 @@ void forceSend() {
   forceTimeout.push_back(false);
   sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
   thread thisPacketTimer (packetTimer, frameNum.intVersion);
+  thisPacketTimer.detach();
   bzero(buf, MAXLEN);
   bufferPos = 0;
   frameNum.intVersion++;
@@ -197,6 +202,7 @@ void pushToBuffer(char c) {
     forceTimeout.push_back(false);
     sendto(sockfd, buf, strlen(buf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
     thread thisPacketTimer (packetTimer, frameNum.intVersion);
+    thisPacketTimer.detach();
     bzero(buf, MAXLEN);
     bufferPos = 0;
     frameNum.intVersion++;
@@ -244,6 +250,7 @@ void resend(int thisFrameNum) {
 }
 
 void listener() {
+  printf("START LISTENER THREAD\n");
   while (switchFinish != FINISHED) {
     int serv_len = sizeof(servaddr);
     char thisBuf[MAXLEN];

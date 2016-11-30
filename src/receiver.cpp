@@ -221,10 +221,6 @@ static void *childProcess(void * param) {
 			continue;
 		}
 
-		// Increment front index and check for wraparound.
-		queue->front = ((queue->front) + 1) % RXQSIZE;
-		(queue->count)--;
-
 		// consume 
 		for (int i = 6; i < FRAMESIZE - 2; ++i)
 		{
@@ -236,6 +232,11 @@ static void *childProcess(void * param) {
 			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, current[i]);
 			usleep(DELAY);
 		}
+
+		// Increment front index and check for wraparound.
+		memset(queue->front,0,sizeof queue->front);
+		queue->front = ((queue->front) + 1) % RXQSIZE;
+		(queue->count)--;
 
 		// If the number of characters in the receive buffer is below
 		// certain level, then send XON.
@@ -270,4 +271,17 @@ char getChecksum(char *c, int start, int end) {
 bool isAck() {
 	Byte* nextData = &queue->data[((queue->rear) + 1) % RXQSIZE];
 	return nextData[0] != 0;
+}
+
+char* createACKPacket(int frameNumber) {
+	char* ret;
+	memset(ret,0,6*sizeof(char));
+	ret[0] = ACK;
+	char* frameNumberChar = toFrame(frameNumber).charVersion;
+	ret[1] = frameNumberChar[0];
+	ret[2] = frameNumberChar[1];
+	ret[3] = frameNumberChar[2];
+	ret[4] = frameNumberChar[3];
+	ret[5] = getChecksum(ret + 1, 1, 5);
+	return ret;
 }

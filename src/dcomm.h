@@ -29,7 +29,12 @@
 
 typedef bool Boolean;
 
-typedef unsigned char Byte;
+typedef char Byte;
+
+union Frame {
+  int intVersion;
+  char charVersion[4];
+};
 
 typedef struct QTYPE
 {
@@ -46,5 +51,21 @@ typedef struct MESGB
 	Byte msgno;
 	Byte *data;
 } MESGB;
+
+
+Frame toFrame(char* c) {
+  Frame ret;
+  ret.charVersion[0] = c[0];
+  ret.charVersion[1] = c[1];
+  ret.charVersion[2] = c[2];
+  ret.charVersion[3] = c[3];
+  return ret;
+}
+
+Frame toFrame(int intVersion) {
+  Frame ret;
+  ret.intVersion = intVersion;
+  return ret;
+}
 
 #endif

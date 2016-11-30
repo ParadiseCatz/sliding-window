@@ -24,11 +24,11 @@
 /* Define receive buffer size */
 #define RXQSIZE 20
 
-#define UPPER_LIMIT (RXQSIZE/2)
+#define UPPER_LIMIT (RXQSIZE/2) - WINDOWSIZE
 #define LOWER_LIMIT (UPPER_LIMIT/2)
 
-Byte temp[1];
-Byte rxbuf[RXQSIZE];
+Byte temp[FRAMESIZE];
+Byte rxbuf[RXQSIZE][FRAMESIZE];
 QTYPE rcvq = { 0, 0, 0, RXQSIZE, rxbuf };
 QTYPE *rxq = &rcvq;
 Byte sent_xonxoff = XON;
@@ -43,10 +43,14 @@ int byteCount = 0, consumeCount = 0;
 /* Socket */
 int sockfd; // listen on sock_fd
 
+// Least idx not ACKed
+int lastIdx = 0;
+
 /* Functions declaration */
 static Byte *rcvchar(int sockfd, QTYPE *queue);
 static Byte *q_get(QTYPE *, Byte *);
 static void *childProcess(void *);
+char getChecksum(char *c, int start, int end);
 
 int main(int argc, char *argv[]) {
 	Byte c;
@@ -135,13 +139,61 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	if (recvfrom(sockfd, temp, 1, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len) < 0) {
+	int len = recvfrom(sockfd, temp, FRAMESIZE, 0,(struct sockaddr*) &cli_addr, (socklen_t*) &cli_len);
+	if (len < 0) {
 		printf("Failed to read from socket\n");
 	}
 
-	queue->data[queue->rear] = temp[0];
+	queue->data[queue->rear] = temp;
 	queue->rear = ((queue->rear) + 1) % RXQSIZE;
 	(queue->count)++;
+
+	// check checksum + send ACK/NAK
+	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 3, len - 2)) {
+		//send ACK
+		Frame frameNumber;
+		frameNumber = toFrame(lastIdx);
+
+		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+			printf("Mengirim ACK %d.\n",lastIdx);
+		} else {
+			printf("Gagal mengirim ACK.\n");
+		}
+	} else {
+		//send NAK
+		Frame frameNumber;
+		frameNumber = toFrame(lastIdx);
+
+		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+			printf("Mengirim NAK.\n");
+		} else {
+			printf("Gagal mengirim NAK.\n");
+		}
+	}
+
+	// add data to buffer
+	queue->data[toInt(temp)] = temp;
+
+	// slide sliding window
+	while (isACK(queue->data[queue->rear])) { //implement isACK
+		queue->rear = ((queue->rear) + 1) % RXQSIZE;
+		(queue->count)++;
+	}
+
+	// check if need send XOFF
+	if (queue->count >= UPPER_LIMIT && !send_xoff) {
+		printf("Buffer > minimum upperlimit\n");
+		send_xon = false;
+		send_xoff = true;
+		sent_xonxoff = XOFF;
+
+		sig[0] = sent_xonxoff;
+		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+			printf("Mengirim XOFF.\n");
+		} else {
+			printf("Gagal mengirim XOFF.\n");
+		}
+	}
 
 	return temp;
 }
@@ -168,10 +220,10 @@ static Byte *q_get(QTYPE *queue, Byte *data)
 	if (queue->count < LOWER_LIMIT && !send_xon) {
 		printf("Buffer < maximum lowerlimit\n");
 		send_xon = true;
-		send_xoff = false;
 		sent_xonxoff = XON;
 
 		sig[0] = sent_xonxoff;
+		// if signal need checksum add here
 		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim XON.\n");
 		} else {
@@ -187,19 +239,53 @@ static void *childProcess(void * param) {
 	QTYPE *rcvq_ptr = (QTYPE *)param;
 
 	while (true) {
-		/* Call q_get */
-		Byte* data;
-		Byte* ret = q_get(rcvq_ptr, data);
-		if (ret) {
-			if (*ret == Endfile) {
+		/* Nothing in the queue */
+		if (!queue->count) continue;
+
+		// Retrieve data from buffer, save it to "current" and "data"
+		Byte* current = &queue->data[queue->front];
+
+		// Increment front index and check for wraparound.
+		queue->front = ((queue->front) + 1) % RXQSIZE;
+		(queue->count)--;
+
+		// consume 
+		for (int i = 6; i < FRAMESIZE - 2; ++i)
+		{
+			if (temp[i] == Endfile) {
 				printf("ENDFILE\n");
-				break;
+				pthread_exit(0);
 			}
 			consumeCount++;
-			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, *ret);
+			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, temp[i]);
+			usleep(DELAY);
 		}
-		/* Can introduce some delay here. */
-		usleep(DELAY);
+
+		// If the number of characters in the receive buffer is below
+		// certain level, then send XON.
+		if (queue->count < LOWER_LIMIT && !send_xon) {
+			printf("Buffer < maximum lowerlimit\n");
+			send_xon = true;
+			sent_xonxoff = XON;
+
+			sig[0] = sent_xonxoff;
+			// if signal need checksum add here
+			if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
+				printf("Mengirim XON.\n");
+			} else {
+				printf("Gagal mengirim XON.\n");
+			}
+		}
 	}
 	pthread_exit(0);
+}
+
+char getChecksum(char *c, int start, int end) {
+  char checksum = 0;
+
+  for (int i = start; i < end; ++i) {
+    checksum ^= c[i];
+  }
+
+  return checksum;
 }

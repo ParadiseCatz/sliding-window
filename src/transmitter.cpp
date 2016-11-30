@@ -29,11 +29,6 @@
 
 using namespace std;
 
-union Frame {
-  int intVersion;
-  char charVersion[4];
-};
-
 FILE* fp;
 char buf[MAXLEN];
 
@@ -190,7 +185,7 @@ void pushToBuffer(char c) {
   // create footer
   if (bufferPos == MAXLEN - 2) {
     buf[bufferPos++] = ETX;
-    buf[bufferPos++] = getChecksum(buf, 3, MAXLEN - 2);
+    buf[bufferPos++] = getChecksum(buf, 3, bufferPos - 2);
     vector<char> tmpBuf;
 
     for (int i = 0; i < strlen(buf); ++i) {
@@ -307,18 +302,4 @@ char getChecksum(char *c, int start, int end) {
   }
 
   return checksum;
-}
-
-Frame toFrame(char* c) {
-  Frame ret;
-  ret.charVersion[0] = c[0];
-  ret.charVersion[1] = c[1];
-  ret.charVersion[2] = c[2];
-  ret.charVersion[3] = c[3];
-  return ret;
-}
-Frame toFrame(int intVersion) {
-  Frame ret;
-  ret.intVersion = intVersion;
-  return ret;
 }

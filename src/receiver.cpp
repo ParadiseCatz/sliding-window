@@ -68,6 +68,7 @@ int main(int argc, char *argv[]) {
 	*/
 	sockfd = socket(AF_INET, SOCK_DGRAM, 0);
 
+	memset(rcvq.data,0,sizeof rcvq.data);
 	memset((char *) &serv_addr, 0, sizeof serv_addr);
 	serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY); //assign server address
@@ -155,10 +156,10 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	}
 
 	// check checksum + send ACK/NAK
-	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 3, len - 2)) {
+	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 3, len - 2) && toInt(temp) < lastIdx + WINDOWSIZE) {
 		//send ACK
-		Frame frameNumber;
-		frameNumber = toFrame(lastIdx);
+		char sig[];
+		
 
 		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim ACK %d.\n",lastIdx);
@@ -167,11 +168,9 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 
 		// add data to buffer
-		queue->data[toInt(temp)] = temp; // toInt blom!!
+		queue->data[toInt(temp)%RXQSIZE] = temp; // toInt blom!!
 	} else {
 		//send NAK
-		Frame frameNumber;
-		frameNumber = toFrame(lastIdx); //toFrame ga yakin jalan
 
 		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
 			printf("Mengirim NAK.\n");
@@ -180,12 +179,11 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
-	
-
 	// slide sliding window
 	while (isACK()) { //implement isACK <- blom!!
 		queue->rear = ((queue->rear) + 1) % RXQSIZE;
 		(queue->count)++;
+		lastIdx++;
 	}
 
 	// check if need send XOFF

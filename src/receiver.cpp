@@ -51,6 +51,7 @@ static Byte *rcvchar(int sockfd, QTYPE *queue);
 static Byte *q_get(QTYPE *, Byte *);
 static void *childProcess(void *);
 char getChecksum(char *c, int start, int end);
+bool isAck(char* c);
 
 int main(int argc, char *argv[]) {
 	Byte c;
@@ -182,7 +183,7 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	
 
 	// slide sliding window
-	while (isACK(queue->data[queue->rear])) { //implement isACK <- blom!!
+	while (isACK()) { //implement isACK <- blom!!
 		queue->rear = ((queue->rear) + 1) % RXQSIZE;
 		(queue->count)++;
 	}
@@ -205,42 +206,6 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	return temp;
 }
 
-/* q_get returns a pointer to the buffer where data is read or NULL if
-* buffer is empty.
-*/
-static Byte *q_get(QTYPE *queue, Byte *data)
-{
-	Byte *current;
-	/* Nothing in the queue */
-	if (!queue->count) return (NULL);
-
-	// Retrieve data from buffer, save it to "current" and "data"
-	current = &queue->data[queue->front];
-	data = current;
-
-	// Increment front index and check for wraparound.
-	queue->front = ((queue->front) + 1) % RXQSIZE;
-	(queue->count)--;
-
-	// If the number of characters in the receive buffer is below
-	// certain level, then send XON.
-	if (queue->count < LOWER_LIMIT && !send_xon) {
-		printf("Buffer < maximum lowerlimit\n");
-		send_xon = true;
-		sent_xonxoff = XON;
-
-		sig[0] = sent_xonxoff;
-		// if signal need checksum add here
-		if (sendto(sockfd, sig, strlen(sig), 0,  (struct sockaddr*) &cli_addr, cli_len) > 0) {
-			printf("Mengirim XON.\n");
-		} else {
-			printf("Gagal mengirim XON.\n");
-		}
-	}
-
-	return current;
-}
-
 static void *childProcess(void * param) {
 
 	QTYPE *rcvq_ptr = (QTYPE *)param;
@@ -252,6 +217,12 @@ static void *childProcess(void * param) {
 		// Retrieve data from buffer, save it to "current" and "data"
 		Byte* current = &queue->data[queue->front];
 
+		int currentFrameNumber = toFrame(current + 1).intVersion;
+		if (!((currentFrameNumber < lastIdx) || (currentFrameNumber >= lastIdx && lastIdx + WINDOWSIZE <= currentFrameNumber && lastIdx + WINDOWSIZE > lastIdx)))
+		{
+			continue;
+		}
+
 		// Increment front index and check for wraparound.
 		queue->front = ((queue->front) + 1) % RXQSIZE;
 		(queue->count)--;
@@ -259,12 +230,12 @@ static void *childProcess(void * param) {
 		// consume 
 		for (int i = 6; i < FRAMESIZE - 2; ++i)
 		{
-			if (temp[i] == Endfile) {
+			if (current[i] == Endfile) {
 				printf("ENDFILE\n");
 				pthread_exit(0);
 			}
 			consumeCount++;
-			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, temp[i]);
+			printf("Mengkonsumsi byte ke-%d: '%c'.\n", consumeCount, current[i]);
 			usleep(DELAY);
 		}
 
@@ -295,4 +266,10 @@ char getChecksum(char *c, int start, int end) {
   }
 
   return checksum;
+}
+
+
+bool isAck() {
+	Byte* nextData = &queue->data[((queue->rear) + 1) % RXQSIZE];
+	return nextData[0] != 0;
 }

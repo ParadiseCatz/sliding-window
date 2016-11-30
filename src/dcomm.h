@@ -79,10 +79,4 @@ int toInt(char* c) {
 
 }
 
-bool isAck(char* c) {
-  
-
-}
-
-
 #endif

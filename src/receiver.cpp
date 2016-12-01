@@ -4,6 +4,7 @@
 
 #include "dcomm.h"
 
+#include <iostream>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -19,12 +20,12 @@
 #include <pthread.h>
 
 /* Delay to adjust speed of consuming buffer, in milliseconds */
-#define DELAY 500000
+#define DELAY 50000
 
 /* Define receive buffer size */
-#define RXQSIZE 20
+#define RXQSIZE 50
 
-#define UPPER_LIMIT (RXQSIZE/2) - WINDOWSIZE
+#define UPPER_LIMIT ((RXQSIZE/2) - WINDOWSIZE)
 #define LOWER_LIMIT (UPPER_LIMIT/2)
 
 Byte temp[FRAMESIZE];
@@ -176,6 +177,8 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 		}
 	}
 
+	std::cout << "Queue count:" << queue->count;
+
 	// check if need send XOFF
 	if (queue->count >= UPPER_LIMIT && !send_xoff) {
 		printf("Buffer > minimum upperlimit\n");
@@ -235,7 +238,10 @@ static void *childProcess(void * param) {
 		if (queue->count < LOWER_LIMIT && !send_xon) {
 			printf("Buffer < maximum lowerlimit\n");
 			send_xon = true;
+			send_xoff = false;
 			sent_xonxoff = XON;
+
+			std::cout << "Queue count:" << queue->count;
 
 			sig[0] = sent_xonxoff;
 			// if signal need checksum add here

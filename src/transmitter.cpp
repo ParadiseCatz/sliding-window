@@ -178,17 +178,18 @@ void sender(FILE* fp) {
   }
 
   /*Send End Signal*/
-  switchFinish = FINISHED;
   pushToBuffer(Endfile);
 
   if (bufferPos) {
     forceSend();
   }
 
-  printf("Exiting Sender Thread\n");
-  usleep(5000000);
+  while (lastACK < frameNum.intVersion) {}
 
+  printf("Exiting Sender Thread\n");
+  switchFinish = FINISHED;
   /*Close Socket*/
+  shutdown(sockfd, SHUT_RDWR);
   close(sockfd);
 }
 
@@ -278,8 +279,9 @@ void packetTimer(int thisFrameNum) {
       continue;
     }
 
-    if (lastACK <= thisFrameNum)
+    if (lastACK > thisFrameNum) {
       return;
+    }
 
     resend(thisFrameNum);
     startTime = chrono::steady_clock::now();
@@ -289,6 +291,7 @@ void packetTimer(int thisFrameNum) {
 // resend packet using buffer archive
 void resend(int thisFrameNum) {
   lock_guard<mutex> guard(resend_mutex);
+  printf("RESEND %d\n", thisFrameNum);
   char thisBuf[bufferArchive[thisFrameNum].size()];
 
   for (int i = 0; i < bufferArchive[thisFrameNum].size(); ++i) {

@@ -25,7 +25,7 @@
 #define BYTESIZE 256 /* The maximum value of a byte */
 #define MAXLEN 1024 /* Maximum messages length */
 #define FRAMESIZE 16 /* Maximum frame size */
-#define WINDOWSIZE 4 /* Window size for sliding window */
+#define WINDOWSIZE 5 /* Window size for sliding window */
 
 typedef bool Boolean;
 

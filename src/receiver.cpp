@@ -5,6 +5,7 @@
 #include "dcomm.h"
 
 #include <iostream>
+#include "cstdlib"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <stdio.h>
@@ -128,8 +129,10 @@ static Byte *rcvchar(int sockfd, QTYPE *queue)
 	printf("RECEIVED: %s\n", temp);
 	printf("LEN: %d\n", len);
 
+	int r = rand() % 2;
+
 	// check checksum + send ACK/NAK
-	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 6, len - 2)) {
+	if (temp[0] == SOH && temp[5] == STX && temp[len - 2] == ETX && temp[len - 1] == getChecksum(temp, 6, len - 2) && r == 1) {
 		//send ACK
 		
 

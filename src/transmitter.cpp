@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include "mutex"
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -63,6 +64,8 @@ Frame toFrame(int);
 
 
 bool is_ip_address;
+
+mutex resend_mutex;
 
 int main(int argc, char** argv) {
   /*Check Argument*/
@@ -285,13 +288,13 @@ void packetTimer(int thisFrameNum) {
 
 // resend packet using buffer archive
 void resend(int thisFrameNum) {
-  char thisBuf[MAXLEN];
+  lock_guard<mutex> guard(resend_mutex);
+  char thisBuf[bufferArchive[thisFrameNum].size()];
 
   for (int i = 0; i < bufferArchive[thisFrameNum].size(); ++i) {
     thisBuf[i] = bufferArchive[thisFrameNum][i];
   }
-
-  sendto(sockfd, thisBuf, strlen(thisBuf), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
+  sendto(sockfd, thisBuf, bufferArchive[thisFrameNum].size(), 0, (struct sockaddr*)&servaddr, sizeof(servaddr));
 }
 
 void listener() {
